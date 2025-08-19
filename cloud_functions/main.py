@@ -1,17 +1,19 @@
-# -- RMK: cloud_functions/main.py: Version 2.2
+# -- RMK: cloud_functions/main.py: Version Final 1.0
 import functions_framework
 import json
 import os
 from google.cloud import storage
 from google.cloud import dataproc_v1 as dataproc
 from google.cloud import firestore
+from google.cloud.firestore_v1 import Client
+from google.cloud.storage import Client as StorageClient
 
 # Initialize clients for Google Cloud services
-storage_client = storage.Client()
+storage_client = StorageClient()
 dataproc_client = dataproc.JobControllerClient(client_options={
     'api_endpoint': 'us-central1-dataproc.googleapis.com:443'
 })
-firestore_db = firestore.Client()
+firestore_db = Client()
 
 # -- REMARK: Set these environment variables in your Cloud Function's configuration.
 # This ensures that sensitive information and configurations are not hardcoded.
