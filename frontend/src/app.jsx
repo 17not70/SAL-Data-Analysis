@@ -1,8 +1,41 @@
-// -- RMK: frontend/src/App.jsx: Version 2.3
+// -- RMK: frontend/src/App.jsx: Version Final 1.0
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Upload, Download, Eye, CheckCircle, Loader, ArrowLeft } from 'lucide-react';
 import { format, getWeek, getMonth, parseISO } from 'date-fns';
+
+// -- REMARK: Firestore and Firebase imports for production.
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, doc, onSnapshot, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+
+// -- REMARK: Firebase configuration. This will be automatically provided by the environment.
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Initialize Firebase services
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+// Helper function to format numbers with commas and two decimal places
+const formatNumber = (num) => {
+  if (num === null || isNaN(num)) {
+    return '0.00';
+  }
+  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+// Helper function to handle date parsing
+const parseDateString = (dateStr) => {
+  const parts = dateStr.split('-');
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+  return new Date(2025, month, parseInt(parts[0]));
+};
 
 // Custom Card components for consistent styling
 const Card = ({ children, className = '' }) => (
@@ -62,30 +95,13 @@ const TableCaption = ({ children }) => (
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
-// Helper function to format numbers with commas and two decimal places
-const formatNumber = (num) => {
-  if (num === null || isNaN(num)) {
-    return '0.00';
-  }
-  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-};
-
-// Helper function to handle date parsing
-const parseDateString = (dateStr) => {
-  const parts = dateStr.split('-');
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const month = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
-  return new Date(2025, month, parseInt(parts[0]));
-};
-
-const LandingPage = ({ onNavigateToDashboard }) => {
+const LandingPage = ({ onNavigateToDashboard, authState }) => {
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
-  const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
   const [greeting, setGreeting] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
-  const [uploadStatus, setUploadStatus] = useState('initial');
-  const [processingStatus, setProcessingStatus] = useState('initial');
+  const [uploadStatus, setUploadStatus] = useState('initial'); // 'initial', 'uploading', 'completed'
+  const [processingStatus, setProcessingStatus] = useState('initial'); // 'initial', 'processing', 'completed'
   const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
@@ -102,11 +118,23 @@ const LandingPage = ({ onNavigateToDashboard }) => {
   const handleNameChange = (e) => setUserName(e.target.value);
   const handleEmailChange = (e) => setUserEmail(e.target.value);
 
-  const handleUserSignIn = (e) => {
+  const handleUserSignIn = async (e) => {
     e.preventDefault();
     if (userName && userEmail) {
-      console.log(`User signed in: ${userName}, ${userEmail}`);
-      setIsUserAuthenticated(true);
+      // -- REMARK: Real Firebase authentication and Firestore logic
+      try {
+        await signInWithCustomToken(auth, initialAuthToken);
+        const userDocRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userDocRef, {
+          name: userName,
+          email: userEmail,
+          lastSignIn: serverTimestamp(),
+        }, { merge: true });
+        authState.setIsAuthenticated(true);
+      } catch (error) {
+        console.error("Error signing in or storing user data:", error);
+        alert("Sign-in failed. Please try again.");
+      }
     } else {
       alert("Please enter your name and email.");
     }
@@ -117,6 +145,8 @@ const LandingPage = ({ onNavigateToDashboard }) => {
     if (file && file.name.endsWith('.xlsx')) {
       setSelectedFile(file);
       setUploadProgress(0);
+      setUploadStatus('initial');
+      setProcessingStatus('initial');
     } else {
       setSelectedFile(null);
       alert('Invalid file type. Please upload a .xlsx file.');
@@ -129,33 +159,61 @@ const LandingPage = ({ onNavigateToDashboard }) => {
     setUploadStatus('uploading');
     setProcessingStatus('initial');
 
-    const simulateUpload = new Promise((resolve) => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += 10;
+    // -- REMARK: Real Google Cloud Storage upload logic
+    const storageRef = ref(storage, `raw-data-uploads/${selectedFile.name}`);
+    const uploadTask = uploadBytesResumable(storageRef, selectedFile);
+    const userDocRef = doc(db, 'users', auth.currentUser.uid);
+    const docRef = await addDoc(collection(userDocRef, 'uploads'), {
+      fileName: selectedFile.name,
+      status: 'uploading',
+      createdAt: serverTimestamp(),
+    });
+
+    uploadTask.on('state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         setUploadProgress(progress);
-        if (progress >= 100) {
-          clearInterval(interval);
-          resolve();
-        }
-      }, 200);
-    });
-
-    await simulateUpload;
-    setUploadStatus('completed');
-    setProcessingStatus('processing');
-
-    const simulateProcessing = new Promise((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, 5000);
-    });
-
-    await simulateProcessing;
-    setProcessingStatus('completed');
+        console.log('Upload is ' + progress + '% done');
+      },
+      (error) => {
+        console.error("Upload failed", error);
+        setUploadStatus('error');
+      },
+      () => {
+        setUploadStatus('completed');
+        setProcessingStatus('processing');
+        // Update Firestore document with completion status and file path
+        setDoc(doc(db, 'processed_files', docRef.id), {
+          status: 'processing',
+          gcsPath: `gs://${storageRef.bucket}/${storageRef.fullPath}`,
+          processedFileName: '',
+        }, { merge: true });
+      }
+    );
   };
 
+  // -- REMARK: Firestore listener for real-time status updates
+  useEffect(() => {
+    if (processingStatus === 'processing' && authState.isAuthenticated) {
+      const q = collection(db, 'users', auth.currentUser.uid, 'uploads');
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "modified") {
+            const doc = change.doc.data();
+            if (doc.status === 'completed') {
+              setProcessingStatus('completed');
+            } else if (doc.status === 'error') {
+              setProcessingStatus('error');
+            }
+          }
+        });
+      });
+      return () => unsubscribe();
+    }
+  }, [processingStatus, authState.isAuthenticated]);
+  
   const handleDownload = () => {
+    // -- REMARK: Real download logic would be implemented here
     alert('Placeholder: Initiating download of normalized data.');
   };
 
@@ -195,7 +253,7 @@ const LandingPage = ({ onNavigateToDashboard }) => {
           />
         </svg>
         <span className="absolute inset-0 flex items-center justify-center text-xl font-bold text-gray-800">
-          {uploadProgress}%
+          {Math.round(uploadProgress)}%
         </span>
       </div>
     );
@@ -210,7 +268,7 @@ const LandingPage = ({ onNavigateToDashboard }) => {
       </div>
 
       <div className="w-full max-w-lg bg-gray-50 p-8 sm:p-10 rounded-3xl shadow-xl border border-gray-200 flex flex-col items-center mt-20">
-        {!isUserAuthenticated ? (
+        {!authState.isAuthenticated ? (
           <form onSubmit={handleUserSignIn} className="w-full">
             <h2 className="text-xl font-semibold mb-6 text-center">Please sign in to continue</h2>
             <div className="mb-4">
@@ -337,75 +395,10 @@ const LandingPage = ({ onNavigateToDashboard }) => {
 };
 
 const DashboardPage = ({ onNavigateToLanding }) => {
-  const [data, setData] = useState([
-    { date: '01-Feb', agency: 'EXPLORE KAILASH TREKS', pax_usd: 0, sales_usd: 0, pax_npr: 40, sales_npr: 291611.46 },
-    { date: '02-Feb', agency: 'FLIGHT CONNECTION', pax_usd: 12, sales_usd: 2198.24, pax_npr: 7, sales_npr: 51458.79 },
-    { date: '03-Feb', agency: 'KAILASH VISION', pax_usd: 2, sales_usd: 349.46, pax_npr: 1, sales_npr: 6284.38 },
-    { date: '04-Feb', agency: 'AABISHKAR TRAVELS', pax_usd: 21, sales_usd: 3924.03, pax_npr: 20, sales_npr: 135297.58 },
-    { date: '05-Feb', agency: 'LUKLA STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 17, sales_npr: 131320.07 },
-    { date: '06-Feb', agency: 'NEPALGUNJ STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 69, sales_npr: 467233.3 },
-    { date: '07-Feb', agency: 'PRECIOUS TRAVELS', pax_usd: 1, sales_usd: 181.64, pax_npr: 3, sales_npr: 17651.95 },
-    { date: '08-Feb', agency: 'SALES OFFICE ,SINAMANGAL A/C', pax_usd: 0, sales_usd: 0, pax_npr: 3, sales_npr: 22333.32 },
-    { date: '09-Feb', agency: 'SIMIKOT STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 29, sales_npr: 213204 },
-    { date: '10-Feb', agency: 'SITA AIR B2C SALES', pax_usd: 0, sales_usd: 0, pax_npr: 9, sales_npr: 61670.88 },
-    { date: '01-Mar', agency: 'AABISHKAR TRAVELS', pax_usd: 10, sales_usd: 1782.94, pax_npr: 2, sales_npr: 12468.19 },
-    { date: '02-Mar', agency: 'FLIGHT CONNECTION', pax_usd: 78, sales_usd: 13738.50, pax_npr: 39, sales_npr: 289833.21 },
-    { date: '03-Mar', agency: 'KAILASH VISION', pax_usd: 50, sales_usd: 9827.87, pax_npr: 12, sales_npr: 79279.70 },
-    { date: '04-Mar', agency: 'LUKLA STATION A/C', pax_usd: 6, sales_usd: 1154.63, pax_npr: 8, sales_npr: 52445.69 },
-    { date: '05-Mar', agency: 'NEPALGUNJ STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 58, sales_npr: 581907.43 },
-    { date: '06-Mar', agency: 'PRECIOUS TRAVELS', pax_usd: 9, sales_usd: 1704.27, pax_npr: 4, sales_npr: 25036.95 },
-    { date: '07-Mar', agency: 'SALES OFFICE ,SINAMANGAL A/C', pax_usd: 1, sales_usd: 125.35, pax_npr: 0, sales_npr: 0 },
-    { date: '08-Mar', agency: 'SIMIKOT STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 13, sales_npr: 115536.85 },
-    { date: '09-Mar', agency: 'SITA AIR B2C SALES', pax_usd: 17, sales_usd: 2949.19, pax_npr: 5, sales_npr: 28325.70 },
-    { date: '10-Mar', agency: 'TAP STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 1, sales_npr: 6284.38 },
-    { date: '01-Apr', agency: 'AABISHKAR TRAVELS', pax_usd: 28, sales_usd: 5263.82, pax_npr: 20, sales_npr: 237833.97 },
-    { date: '02-Apr', agency: 'FLIGHT CONNECTION', pax_usd: 88, sales_usd: 15381.30, pax_npr: 18, sales_npr: 100633.47 },
-    { date: '03-Apr', agency: 'KAILASH VISION', pax_usd: 7, sales_usd: 1399.33, pax_npr: 0, sales_npr: 0 },
-    { date: '04-Apr', agency: 'LUKLA STATION A/C', pax_usd: 6, sales_usd: 1077.10, pax_npr: 1, sales_npr: 5288.79 },
-    { date: '05-Apr', agency: 'NEPALGUNJ STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 56, sales_npr: 324386.37 },
-    { date: '06-Apr', agency: 'PRECIOUS TRAVELS', pax_usd: 2, sales_usd: 333.82, pax_npr: 0, sales_npr: 0 },
-    { date: '07-Apr', agency: 'SALES OFFICE ,SINAMANGAL A/C', pax_usd: 8, sales_usd: 377.58, pax_npr: 4, sales_npr: 29691.88 },
-    { date: '08-Apr', agency: 'SIMIKOT STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 2, sales_npr: 9111.56 },
-    { date: '09-Apr', agency: 'SITA AIR B2C SALES', pax_usd: 3, sales_usd: 509.37, pax_npr: 2, sales_npr: 11342.94 },
-    { date: '10-Apr', agency: 'TAP STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 3, sales_npr: 25645.35 },
-    { date: '01-May', agency: 'AABISHKAR TRAVELS', pax_usd: 8, sales_usd: 1546.69, pax_npr: 3, sales_npr: 17082.43 },
-    { date: '02-May', agency: 'FLIGHT CONNECTION', pax_usd: 75, sales_usd: 13592.62, pax_npr: 25, sales_npr: 154388.90 },
-    { date: '03-May', agency: 'KAILASH VISION', pax_usd: 1, sales_usd: 198.95, pax_npr: 2, sales_npr: 10378.82 },
-    { date: '04-May', agency: 'LUKLA STATION A/C', pax_usd: 1, sales_usd: 198.95, pax_npr: 7, sales_npr: 48785.21 },
-    { date: '05-May', agency: 'NEPALGUNJ STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 56, sales_npr: 409908.50 },
-    { date: '06-May', agency: 'PRECIOUS TRAVELS', pax_usd: 6, sales_usd: 1196.70, pax_npr: 3, sales_npr: 18040.67 },
-    { date: '07-May', agency: 'SALES OFFICE ,SINAMANGAL A/C', pax_usd: 0, sales_usd: 0, pax_npr: 3, sales_npr: 26621.67 },
-    { date: '08-May', agency: 'SIMIKOT STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 10, sales_npr: 73207.06 },
-    { date: '09-May', agency: 'SITA AIR B2C SALES', pax_usd: 1, sales_usd: 221.97, pax_npr: 0, sales_npr: 0 },
-    { date: '10-May', agency: 'TAP STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 2, sales_npr: 10497.70 },
-    { date: '01-Jun', agency: 'AABISHKAR TRAVELS', pax_usd: 2, sales_usd: 365.54, pax_npr: 10, sales_npr: 126386.81 },
-    { date: '02-Jun', agency: 'FLIGHT CONNECTION', pax_usd: 12, sales_usd: 2198.24, pax_npr: 7, sales_npr: 51458.79 },
-    { date: '03-Jun', agency: 'KAILASH VISION', pax_usd: 1, sales_usd: 182.77, pax_npr: 0, sales_npr: 0 },
-    { date: '04-Jun', agency: 'LUKLA STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 2, sales_npr: 21625.67 },
-    { date: '05-Jun', agency: 'NEPALGUNJ STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 69, sales_npr: 467233.30 },
-    { date: '06-Jun', agency: 'PRECIOUS TRAVELS', pax_usd: 2, sales_usd: 363.28, pax_npr: 2, sales_npr: 11700.92 },
-    { date: '07-Jun', agency: 'SALES OFFICE ,SINAMANGAL A/C', pax_usd: 0, sales_usd: 0, pax_npr: 6, sales_npr: 52667.04 },
-    { date: '08-Jun', agency: 'SIMIKOT STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 10, sales_npr: 82164.62 },
-    { date: '09-Jun', agency: 'SITA AIR B2C SALES', pax_usd: 0, sales_usd: 0, pax_npr: 12, sales_npr: 82227.84 },
-    { date: '10-Jun', agency: 'TAP STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 2, sales_npr: 800.04 },
-    { date: '01-Jul', agency: 'AABISHKAR TRAVELS', pax_usd: 10, sales_usd: 1763.84, pax_npr: 2, sales_npr: 12455.71 },
-    { date: '02-Jul', agency: 'FLIGHT CONNECTION', pax_usd: 241, sales_usd: 43616.72, pax_npr: 56, sales_npr: 326009.93 },
-    { date: '03-Jul', agency: 'KAILASH VISION', pax_usd: 0, sales_usd: 0, pax_npr: 23, sales_npr: 379824.07 },
-    { date: '04-Jul', agency: 'NEPALGUNJ STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 18, sales_npr: 166288.21 },
-    { date: '05-Jul', agency: 'SIMIKOT STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 4, sales_npr: 35585.96 },
-    { date: '06-Jul', agency: 'SITA AIR B2C SALES', pax_usd: 4, sales_usd: 732.66, pax_npr: 0, sales_npr: 0 },
-    { date: '01-Aug', agency: 'AABISHKAR TRAVELS', pax_usd: 9, sales_usd: 1902.16, pax_npr: 6, sales_npr: 37919.49 },
-    { date: '02-Aug', agency: 'EXPLORE KAILASH TREKS', pax_usd: 0, sales_usd: 0, pax_npr: 22, sales_npr: 365522.52 },
-    { date: '03-Aug', agency: 'FLIGHT CONNECTION', pax_usd: 222, sales_usd: 42059.66, pax_npr: 93, sales_npr: 661446.56 },
-    { date: '04-Aug', agency: 'KAILASH VISION', pax_usd: 0, sales_usd: 0, pax_npr: 3, sales_npr: 49542.27 },
-    { date: '05-Aug', agency: 'NEPALGUNJ STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 9, sales_npr: 80793.54 },
-    { date: '06-Aug', agency: 'SALES OFFICE ,SINAMANGAL A/C', pax_usd: 3, sales_usd: 295.43, pax_npr: 10, sales_npr: 151495.88 },
-    { date: '07-Aug', agency: 'SIMIKOT STATION A/C', pax_usd: 0, sales_usd: 0, pax_npr: 3, sales_npr: 26689.47 },
-    { date: '08-Aug', agency: 'PRECIOUS TRAVELS', pax_usd: 2, sales_usd: 367.34, pax_npr: 0, sales_npr: 0 },
-    { date: '09-Aug', agency: 'SITA AIR B2C SALES', pax_usd: 2, sales_usd: 365.32, pax_npr: 0, sales_npr: 0 },
-    { date: '10-Aug', agency: 'AABISHKAR TRAVELS', pax_usd: 17, sales_usd: 3500.63, pax_npr: 4, sales_npr: 25011.99 },
-    { date: '11-Aug', agency: 'FLIGHT CONNECTION', pax_usd: 105, sales_usd: 19068.76, pax_npr: 29, sales_npr: 232006.65 },
-  ]);
+  const [data, setData] = useState([]);
+  
+  // -- REMARK: State to hold the final processed file's URL
+  const [downloadUrl, setDownloadUrl] = useState('');
   
   const [selectedMonth, setSelectedMonth] = useState('All');
   const [selectedAgencies, setSelectedAgencies] = useState(['All']);
@@ -420,6 +413,56 @@ const DashboardPage = ({ onNavigateToLanding }) => {
   const [chartData, setChartData] = useState([]);
   const [forecastData, setForecastData] = useState([]);
   const [tableData, setTableData] = useState([]);
+
+  // -- REMARK: Data fetching logic
+  useEffect(() => {
+    // We fetch the latest processed file's path from Firestore
+    // then fetch the CSV data from that GCS URL.
+    const fetchAndProcessData = async () => {
+      if (!auth.currentUser) return;
+
+      const userId = auth.currentUser.uid;
+      const processedFilesRef = collection(db, 'users', userId, 'processed_files');
+      
+      onSnapshot(processedFilesRef, async (snapshot) => {
+        if (!snapshot.empty) {
+          const latestDoc = snapshot.docs.find(doc => doc.data().status === 'completed');
+          if (latestDoc) {
+            const data = latestDoc.data();
+            const gcsPath = data.gcsPath;
+            setDownloadUrl(gcsPath);
+
+            // Fetch the CSV data from the GCS URL
+            const response = await fetch(gcsPath);
+            const csvText = await response.text();
+            
+            // -- REMARK: This is a simplified CSV parsing. In a real app,
+            // a library like 'papaparse' would be used for more robust parsing.
+            const lines = csvText.split('\n');
+            const headers = lines[0].split(',');
+            const parsedData = lines.slice(1).map(line => {
+                const values = line.split(',');
+                const item = {};
+                headers.forEach((header, index) => {
+                    item[header.trim()] = values[index];
+                });
+                return item;
+            });
+            setData(parsedData);
+          }
+        }
+      });
+    };
+    
+    // Authenticate and then fetch data
+    if (initialAuthToken) {
+        signInWithCustomToken(auth, initialAuthToken).then(() => {
+            fetchAndProcessData();
+        }).catch(e => console.error("Error signing in", e));
+    }
+
+  }, []);
+
 
   useEffect(() => {
     const filteredData = data.filter(item => {
@@ -470,10 +513,10 @@ const DashboardPage = ({ onNavigateToLanding }) => {
           sales_npr: 0
         };
       }
-      groupedData[key].pax_usd += item.pax_usd;
-      groupedData[key].pax_npr += item.pax_npr;
-      groupedData[key].sales_usd += item.sales_usd;
-      groupedData[key].sales_npr += item.sales_npr;
+      groupedData[key].pax_usd += parseFloat(curr.pax_usd);
+      groupedData[key].pax_npr += parseFloat(curr.pax_npr);
+      groupedData[key].sales_usd += parseFloat(curr.sales_usd);
+      groupedData[key].sales_npr += parseFloat(curr.sales_npr);
     });
 
     const sortedGroupedData = Object.values(groupedData).sort((a, b) => {
@@ -554,10 +597,10 @@ const DashboardPage = ({ onNavigateToLanding }) => {
         if (!acc[key]) {
           acc[key] = { name: key, pax_usd: 0, pax_npr: 0, sales_usd: 0, sales_npr: 0 };
         }
-        acc[key].pax_usd += curr.pax_usd;
-        acc[key].pax_npr += curr.pax_npr;
-        acc[key].sales_usd += curr.sales_usd;
-        acc[key].sales_npr += curr.sales_npr;
+        acc[key].pax_usd += parseFloat(curr.pax_usd);
+        acc[key].pax_npr += parseFloat(curr.pax_npr);
+        acc[key].sales_usd += parseFloat(curr.sales_usd);
+        acc[key].sales_npr += parseFloat(curr.sales_npr);
         return acc;
       }, {});
       
@@ -749,7 +792,21 @@ const DashboardPage = ({ onNavigateToLanding }) => {
   
 
 const App = () => {
+  // We'll use a single state for authentication and page navigation
+  const [authState, setAuthState] = useState({ isAuthenticated: false, user: null });
   const [currentPage, setCurrentPage] = useState('landing');
+
+  // Listen for authentication changes
+  useEffect(() => {
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setAuthState({ isAuthenticated: true, user });
+      } else {
+        setAuthState({ isAuthenticated: false, user: null });
+      }
+    });
+  }, []);
+
   const handleViewReport = () => {
     setCurrentPage('dashboard');
   };
@@ -758,15 +815,20 @@ const App = () => {
     setCurrentPage('landing');
   };
 
+  // The main router logic
   switch (currentPage) {
     case 'landing':
-      return <LandingPage onNavigateToDashboard={handleViewReport} />;
+      return <LandingPage onNavigateToDashboard={handleViewReport} authState={authState} />;
     case 'dashboard':
-      return <DashboardPage onNavigateToLanding={handleNavigateToLanding} />;
+      // The dashboard page will only be accessible if the user is authenticated
+      if (authState.isAuthenticated) {
+        return <DashboardPage onNavigateToLanding={handleNavigateToLanding} authState={authState} />;
+      } else {
+        return <LandingPage onNavigateToDashboard={handleViewReport} authState={authState} />;
+      }
     default:
-      return <LandingPage onNavigateToDashboard={handleViewReport} />;
+      return <LandingPage onNavigateToDashboard={handleViewReport} authState={authState} />;
   }
 };
 
 export default App;
-
