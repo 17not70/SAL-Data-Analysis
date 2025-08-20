@@ -1,4 +1,6 @@
-// -- RMK: frontend/src/App.jsx: Version Final 1.0
+// -- RMK: Main application component, refactored to use external UI components. Version 1.1
+// -- FILE: frontend/src/App.js
+
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Upload, Download, Eye, CheckCircle, Loader, ArrowLeft } from 'lucide-react';
@@ -9,6 +11,10 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+
+// -- NEW: Importing our custom components from their new files
+import { Card, CardHeader, CardTitle, CardContent } from './components/Card.js';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableCaption } from './components/Table.js';
 
 // -- REMARK: Firebase configuration. This will be automatically provided by the environment.
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
@@ -37,61 +43,7 @@ const parseDateString = (dateStr) => {
   return new Date(2025, month, parseInt(parts[0]));
 };
 
-// Custom Card components for consistent styling
-const Card = ({ children, className = '' }) => (
-  <div className={`bg-white rounded-xl shadow-lg p-6 ${className}`}>
-    {children}
-  </div>
-);
-
-const CardHeader = ({ children, className = '' }) => (
-  <div className={`flex flex-row items-center justify-between pb-2 ${className}`}>
-    {children}
-  </div>
-);
-
-const CardTitle = ({ children, className = '' }) => (
-  <h3 className={`text-sm font-medium ${className}`}>
-    {children}
-  </h3>
-);
-
-const CardContent = ({ children, className = '' }) => (
-  <div className={`text-2xl font-bold ${className}`}>
-    {children}
-  </div>
-);
-
-// Custom Table components with corrected HTML structure
-const Table = ({ children }) => (
-  <div className="w-full overflow-auto">
-    <table className="w-full caption-bottom text-sm">{children}</table>
-  </div>
-);
-
-const TableHeader = ({ children }) => (
-  <thead className="sticky top-0 bg-white shadow-sm z-10">{children}</thead>
-);
-
-const TableBody = ({ children }) => (
-  <tbody className="[&_tr:last-child]:border-0">{children}</tbody>
-);
-
-const TableRow = ({ children, ...props }) => (
-  <tr className="border-b transition-colors hover:bg-gray-100" {...props}>{children}</tr>
-);
-
-const TableHead = ({ children }) => (
-  <th className="h-12 px-4 text-left align-middle font-medium text-gray-500">{children}</th>
-);
-
-const TableCell = ({ children }) => (
-  <td className="p-4 align-middle">{children}</td>
-);
-
-const TableCaption = ({ children }) => (
-  <caption className="mt-4 text-sm text-gray-500">{children}</caption>
-);
+// -- DELETED: The Card and Table component definitions were removed from here.
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
@@ -513,10 +465,10 @@ const DashboardPage = ({ onNavigateToLanding }) => {
           sales_npr: 0
         };
       }
-      groupedData[key].pax_usd += parseFloat(curr.pax_usd);
-      groupedData[key].pax_npr += parseFloat(curr.pax_npr);
-      groupedData[key].sales_usd += parseFloat(curr.sales_usd);
-      groupedData[key].sales_npr += parseFloat(curr.sales_npr);
+      groupedData[key].pax_usd += parseFloat(item.pax_usd);
+      groupedData[key].pax_npr += parseFloat(item.pax_npr);
+      groupedData[key].sales_usd += parseFloat(item.sales_usd);
+      groupedData[key].sales_npr += parseFloat(item.sales_npr);
     });
 
     const sortedGroupedData = Object.values(groupedData).sort((a, b) => {
