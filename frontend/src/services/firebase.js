@@ -1,13 +1,13 @@
-// -- RMK: Centralized Firebase configuration and services. Version 1.0
+// -- RMK: Centralized Firebase configuration and services. Version 1.1
 // -- FILE: frontend/src/services/firebase.js
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'; // Added GoogleAuthProvider and signInWithPopup
 import { getFirestore, collection, doc, onSnapshot, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
-// -- REMARK: Firebase configuration. This will be automatically provided by the environment.
 const firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG);
+
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
@@ -28,5 +28,7 @@ export {
   setDoc,
   ref,
   uploadBytesResumable,
-  getDownloadURL
+  getDownloadURL,
+  GoogleAuthProvider, // Export new provider
+  signInWithPopup    // Export new sign-in method
 };
