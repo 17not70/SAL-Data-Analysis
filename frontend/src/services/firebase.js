@@ -7,8 +7,7 @@ import { getFirestore, collection, doc, onSnapshot, addDoc, serverTimestamp, set
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 // -- REMARK: Firebase configuration. This will be automatically provided by the environment.
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-
+const firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG);
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
