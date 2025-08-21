@@ -1,10 +1,6 @@
-// -- RMK: Main application router. Cleaned and finalized. Version 2.0
-// -- FILE: frontend/src/App.js
-
 // Final comment to trigger a fresh build
-import React, { useState, useEffect } from 'react';
-import LandingPage from './pages/LandingPage.js';
-// ... rest of the file
+// -- RMK: Main application router. Cleaned and finalized. Version 2.1
+// -- FILE: frontend/src/App.js
 
 import React, { useState, useEffect } from 'react';
 
